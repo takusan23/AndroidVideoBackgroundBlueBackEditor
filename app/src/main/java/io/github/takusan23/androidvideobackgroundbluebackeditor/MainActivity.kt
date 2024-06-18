@@ -15,10 +15,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -29,6 +31,17 @@ import io.github.takusan23.akaricore.video.CanvasVideoProcessor
 import io.github.takusan23.akaricore.video.VideoFrameBitmapExtractor
 import io.github.takusan23.androidvideobackgroundbluebackeditor.ui.theme.AndroidVideoBackgroundTransparentEditorTheme
 import kotlinx.coroutines.launch
+import kotlin.system.measureTimeMillis
+
+// 時間測って println してくれるやつ
+inline fun <T> printTime(task: () -> T): T {
+    val taskResult: T
+    val time = measureTimeMillis {
+        taskResult = task()
+    }
+    println("PrintTime $time")
+    return taskResult
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -48,7 +61,9 @@ private fun ImageSegmentationScreen() {
     val scope = rememberCoroutineScope()
     val mediaPipeImageSegmentation = remember { MediaPipeImageSegmentation(context) }
 
+    // エンコード済み時間と処理中かどうか
     val encodedPositionMs = remember { mutableLongStateOf(0) }
+    val isRunning = remember { mutableStateOf(false) }
 
     val videoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia(),
@@ -56,6 +71,8 @@ private fun ImageSegmentationScreen() {
             // 選んでもらったら処理開始
             uri ?: return@rememberLauncherForActivityResult
             scope.launch {
+                isRunning.value = true
+
                 // 動画サイズが欲しい
                 val metadataRetriever = MediaMetadataRetriever().apply {
                     context.contentResolver.openFileDescriptor(uri, "r")
@@ -89,7 +106,8 @@ private fun ImageSegmentationScreen() {
                             // 推論する
                             val segmentedBitmap = mediaPipeImageSegmentation.segmentation(videoFrameBitmap, positionMs)
 
-                            // Canvas に書き込む。背景を青にした推論結果を上に重ねて描画することで、BB 素材っぽく
+                            // Canvas に書き込む
+                            // 背景を青にした推論結果を上に重ねて描画することで、BB 素材っぽく
                             drawBitmap(videoFrameBitmap, 0f, 0f, paint)
                             drawBitmap(segmentedBitmap, 0f, 0f, paint)
                         }
@@ -100,6 +118,8 @@ private fun ImageSegmentationScreen() {
                         positionMs <= 10_000
                     }
                 )
+
+                isRunning.value = false
             }
         }
     )
@@ -111,7 +131,8 @@ private fun ImageSegmentationScreen() {
                 videoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
             }) { Text(text = "動画を選ぶ") }
 
-            if (encodedPositionMs.longValue != 0L) {
+            if (isRunning.value) {
+                CircularProgressIndicator()
                 Text(text = "処理済みの時間 : ${encodedPositionMs.longValue} ミリ秒")
             }
         }
